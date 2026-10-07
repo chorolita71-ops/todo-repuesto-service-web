@@ -1,0 +1,781 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todo Repuestos POS + Service QR</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+body{
+  font-family:'Segoe UI', Tahoma, sans-serif;
+  background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+  margin:0;
+  padding:10px;
+  color:#333;
+}
+h1{text-align:center}
+
+.tabs{
+  display:flex;
+  gap:6px;
+  margin-bottom:12px;
+}
+
+.tabs button{
+  flex:1;
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  background:#ffffff22;
+  color:white;
+  font-weight:bold;
+  backdrop-filter: blur(5px);
+}
+
+.tabs button.active{
+  background:#e53935;
+}
+
+.section{display:none}
+.section.active{display:block}
+
+.card{
+  background:white;
+  padding:15px;
+  border-radius:14px;
+  margin-bottom:12px;
+  box-shadow:0 8px 20px rgba(0,0,0,.15);
+  transition:0.2s;
+}
+
+input,select,button{
+width:100%;
+padding:10px;
+margin-top:6px;
+margin-bottom:8px;
+font-size:16px
+}
+
+button{border:none;border-radius:6px}
+.add{background:#e53935;color:white}
+.print{background:#1e88e5;color:white}
+.clear{background:#b71c1c;color:white}
+.save{background:#00897b;color:white}
+
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}
+
+.total{font-size:24px;font-weight:bold;text-align:right;color:#e53935}
+
+.ticket{
+  white-space:pre;
+  font-family:monospace;
+  font-size:12px;
+  background:#fff;
+  padding:12px;
+  max-width:320px;
+  margin:auto;
+  border-radius:10px;
+  box-shadow:0 5px 10px rgba(0,0,0,.2);
+}
+
+.product-row{
+display:flex;
+justify-content:space-between;
+margin-bottom:8px;
+}
+
+#logoPreview{
+max-width:140px;
+display:block;
+margin:auto;
+margin-bottom:10px;
+}
+
+button{
+  cursor:pointer;
+  transition:0.2s;
+}
+button:hover{
+  opacity:0.85;
+}
+
+/* ===== SERVICE QR ===== */
+.service-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.service-grid{grid-template-columns:1fr}}
+.service-status{display:inline-block;padding:5px 10px;border-radius:20px;font-size:13px;font-weight:bold}
+.status-ok{background:#dff5e8;color:#087f3f}.status-warn{background:#fff3cd;color:#856404}.status-danger{background:#f8d7da;color:#842029}
+.qr-box{text-align:center;padding:15px;background:#f7f7f7;border-radius:12px}
+.qr-box canvas,.qr-box img{margin:10px auto!important}
+.vehicle-card{border-left:5px solid #e53935}
+.maintenance-item{border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0;background:#fafafa}
+.public-service{max-width:700px;margin:20px auto;background:#fff;border-radius:18px;padding:18px;box-shadow:0 8px 25px rgba(0,0,0,.18)}
+.public-service h2{color:#e53935;margin-top:0}
+.public-head{text-align:center;border-bottom:2px solid #e53935;padding-bottom:12px;margin-bottom:15px}
+.small-note{font-size:12px;color:#666}
+
+</style>
+
+<style id="print_fix_v22">
+@media print {
+
+body *{
+visibility:hidden !important;
+}
+
+#ticket, #ticket *{
+visibility:visible !important;
+}
+
+#ticket{
+position:absolute;
+left:0;
+top:0;
+width:58mm;
+font-family:monospace;
+font-size:12px;
+}
+
+button, input, select{
+display:none !important;
+}
+
+}
+</style>
+
+</head>
+
+<body>
+
+<h1 id="businessName">TODO REPUESTOS</h1>
+
+<div class="tabs">
+<button id="tabVentas" class="active" onclick="tab('ventas')">Ventas</button>
+<button id="tabProductos" onclick="tab('productos')">Productos</button>
+<button id="tabHistorial" onclick="tab('historial')">Historial</button>
+<button id="tabServiceQR" onclick="tab('serviceQR')">Service QR</button>
+<button id="tabConfig" onclick="tab('config')">Configuración</button>
+</div>
+
+<div id="ventas" class="section active">
+
+<div class="card">
+
+<label>Recibo</label>
+<input id="recibo">
+
+<label>Fecha</label>
+<input type="date" id="fecha">
+
+<label>Cliente</label>
+<input list="listaClientes" id="cliente" placeholder="Buscar o escribir cliente">
+<datalist id="listaClientes"></datalist>
+<button type="button" onclick="guardarCliente()" class="save">Guardar cliente</button>
+
+<label>Producto</label>
+<select id="producto"></select>
+
+<label>Cantidad</label>
+<input id="cantidad" type="number" value="1">
+
+<button class="add" onclick="agregarProducto()">Agregar producto</button>
+
+</div>
+
+<div class="card">
+<label>Pago del cliente</label>
+<input type="number" id="pago" placeholder="0.00" oninput="calcularCambio()">
+
+<label>Cambio</label>
+<input type="text" id="cambio" readonly>
+</div>
+
+<div class="card">
+
+<table>
+<thead>
+<tr>
+<th>Producto</th>
+<th>Cant</th>
+<th>Precio</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody id="tabla"></tbody>
+</table>
+
+<div class="total">TOTAL: $<span id="total">0</span></div>
+
+<button class="print" onclick="vistaPrevia()">Vista previa / Imprimir</button>
+<button class="clear" onclick="finalizarVenta()">Finalizar venta</button>
+
+</div>
+
+<div class="card">
+<h3>Vista previa ticket</h3>
+<div id="ticket"></div>
+<button class="add" onclick="window.print()">Imprimir ahora</button>
+</div>
+
+</div>
+
+<div id="productos" class="section">
+
+<div class="card">
+<label>Producto</label>
+<input id="p_nombre">
+
+<label>Precio</label>
+<input id="p_precio" type="number">
+
+<button class="save" onclick="guardarProducto()">Guardar producto</button>
+</div>
+
+<div class="card">
+<h3>Lista productos</h3>
+<div id="listaProductos"></div>
+</div>
+
+</div>
+
+<div id="historial" class="section">
+<div class="card">
+<h3>Historial de ventas</h3>
+<div id="listaVentas"></div>
+</div>
+</div>
+
+
+<div id="serviceQR" class="section">
+  <div class="card">
+    <h2>🚗 Service QR</h2>
+    <p>Registra el vehículo y su mantenimiento. El QR abre una ficha pública de servicio para el cliente.</p>
+    <div class="service-grid">
+      <div>
+        <label>Cliente</label>
+        <input id="sq_cliente" placeholder="Nombre del cliente">
+        <label>Marca</label>
+        <input id="sq_marca" placeholder="Toyota">
+        <label>Modelo</label>
+        <input id="sq_modelo" placeholder="Hilux">
+        <label>Año</label>
+        <input id="sq_anio" type="number" placeholder="2020">
+        <label>Motor</label>
+        <input id="sq_motor" placeholder="2.8 Diesel">
+      </div>
+      <div>
+        <label>VIN</label>
+        <input id="sq_vin" placeholder="VIN">
+        <label>Placa</label>
+        <input id="sq_placa" placeholder="Placa">
+        <label>Kilometraje actual</label>
+        <input id="sq_km" type="number" placeholder="125000">
+        <label>Próximo servicio (km)</label>
+        <input id="sq_nextkm" type="number" placeholder="130000">
+        <label>Próximo servicio (fecha)</label>
+        <input id="sq_nextdate" type="date">
+      </div>
+    </div>
+    <label>Estado general</label>
+    <select id="sq_estado">
+      <option value="OK">Bueno / OK</option>
+      <option value="WARN">Revisión recomendada</option>
+      <option value="DANGER">Requiere atención</option>
+    </select>
+    <label>Observaciones</label>
+    <textarea id="sq_obs" rows="3" style="width:100%;padding:10px;font-size:16px;box-sizing:border-box"></textarea>
+    <label>Servicio realizado</label>
+    <input id="sq_servicio" placeholder="Cambio de aceite y filtro">
+    <label>Fecha del servicio</label>
+    <input id="sq_fecha" type="date">
+    <button class="save" onclick="guardarServiceQR()">Guardar vehículo / mantenimiento</button>
+  </div>
+
+  <div class="card">
+    <h3>Vehículos registrados</h3>
+    <div id="listaServiceQR"></div>
+  </div>
+
+  <div class="card">
+    <h3>Ficha seleccionada / QR</h3>
+    <div id="serviceQRPreview"></div>
+  </div>
+</div>
+
+<div id="config" class="section">
+
+<div class="card">
+
+<label>Logo</label>
+<input type="file" id="logoInput" accept="image/*">
+<img id="logoPreview">
+
+<label>Nombre negocio</label>
+<input id="cfg_nombre">
+
+<label>Giro</label>
+<input id="cfg_giro">
+
+<label>Dirección</label>
+<input id="cfg_direccion">
+
+<label>Teléfono</label>
+<input id="cfg_tel">
+
+<label>Correo</label>
+<input id="cfg_email">
+
+<label>Mensaje final ticket</label>
+<input id="cfg_msg">
+
+<button class="save" onclick="guardarConfig()">Guardar configuración</button>
+
+</div>
+
+</div>
+
+<script>
+
+let productos=JSON.parse(localStorage.getItem("productos")||"[]")
+let ventas=JSON.parse(localStorage.getItem("ventas")||"[]")
+let config=JSON.parse(localStorage.getItem("config")||"{}")
+
+let venta=[]
+let total=0
+
+function tab(id){
+
+document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"))
+document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"))
+
+document.getElementById(id).classList.add("active")
+document.getElementById("tab"+id.charAt(0).toUpperCase()+id.slice(1)).classList.add("active")
+
+if(id=="historial")renderHistorial()
+
+}
+
+function cargarProductos(){
+
+let select=document.getElementById("producto")
+select.innerHTML=""
+
+productos.forEach(p=>{
+
+let o=document.createElement("option")
+o.value=p.nombre
+o.dataset.precio=p.precio
+o.text=p.nombre+" - $"+p.precio
+
+select.appendChild(o)
+
+})
+
+renderListaProductos()
+
+}
+
+function agregarProducto(){
+
+let s=document.getElementById("producto")
+if(!s.options.length)return
+
+let op=s.options[s.selectedIndex]
+
+let nombre=op.value
+let precio=parseFloat(op.dataset.precio)
+let cant=parseFloat(document.getElementById("cantidad").value)
+
+let subtotal=cant*precio
+
+venta.push({nombre,cant,precio,subtotal})
+total+=subtotal
+
+renderTabla()
+
+}
+
+function renderTabla(){
+
+let t=document.getElementById("tabla")
+t.innerHTML=""
+
+venta.forEach(v=>{
+
+let tr=document.createElement("tr")
+
+tr.innerHTML=`
+<td>${v.nombre}</td>
+<td>${v.cant}</td>
+<td>${v.precio}</td>
+<td>${v.subtotal}</td>
+`
+
+t.appendChild(tr)
+
+})
+
+document.getElementById("total").innerText=total
+
+}
+
+function vistaPrevia(){
+
+let cliente=document.getElementById("cliente").value
+let fecha=document.getElementById("fecha").value
+let recibo=document.getElementById("recibo").value
+
+let logo=localStorage.getItem("logo")
+
+let nombre=config.nombre||"TODO REPUESTOS"
+let giro=config.giro||""
+let dir=config.direccion||""
+let tel=config.tel||""
+let email=config.email||""
+let msg=config.msg||"Gracias por su compra"
+
+let t=""
+
+t+=nombre+"\n"
+if(giro)t+=giro+"\n"
+if(dir)t+="Dirección: "+dir+"\n"
+if(tel)t+="Tel: "+tel+"\n"
+if(email)t+="Correo: "+email+"\n"
+
+t+="------------------------------\n"
+t+="Recibo: "+recibo+"\n"
+t+="Fecha: "+fecha+"\n"
+t+="Cliente: "+cliente+"\n"
+t+="------------------------------\n"
+
+venta.forEach(v=>{
+t+=v.nombre+" "+v.cant+" x "+v.precio+" = "+v.subtotal+"\n"
+})
+
+t+="------------------------------\n"
+t+="TOTAL: "+total+"\n"
+t+=msg
+
+let div=document.getElementById("ticket")
+
+if(logo){
+div.innerHTML="<img src='"+logo+"' id='logoPreview'><pre>"+t+"</pre>"
+}else{
+div.innerHTML="<pre>"+t+"</pre>"
+}
+
+}
+
+function finalizarVenta(){
+
+if(!document.getElementById("ticket").innerText){
+  vistaPrevia();
+}
+
+
+let recibo=document.getElementById("recibo").value
+let fecha=document.getElementById("fecha").value
+let cliente=document.getElementById("cliente").value
+
+ventas.push({
+  recibo,
+  fecha,
+  cliente,
+  total,
+  ticket: document.getElementById("ticket").innerText
+})
+localStorage.setItem("ventas",JSON.stringify(ventas))
+
+venta=[]
+total=0
+
+renderTabla()
+
+document.getElementById("recibo").value=parseInt(recibo)+1
+
+}
+
+function renderHistorial(){
+
+let div=document.getElementById("listaVentas")
+div.innerHTML=""
+
+ventas.forEach((v,i)=>{
+
+let d=document.createElement("div")
+d.className="product-row"
+
+d.innerHTML=`
+<div style="width:100%">
+  <div>Recibo ${v.recibo} | ${v.fecha} | ${v.cliente} | $${v.total}</div>
+  <button class="print" onclick="reimprimir(${i})">Reimprimir</button>
+</div>
+`
+
+div.appendChild(d)
+
+})
+
+}
+
+function guardarProducto(){
+
+let n=document.getElementById("p_nombre").value
+let p=parseFloat(document.getElementById("p_precio").value)
+
+if(!n||!p)return
+
+productos.push({nombre:n,precio:p})
+
+localStorage.setItem("productos",JSON.stringify(productos))
+
+document.getElementById("p_nombre").value=""
+document.getElementById("p_precio").value=""
+
+cargarProductos()
+
+}
+
+function renderListaProductos(){
+
+let div=document.getElementById("listaProductos")
+div.innerHTML=""
+
+productos.forEach((p,i)=>{
+
+let d=document.createElement("div")
+d.className="product-row"
+
+d.innerHTML=`
+<span>${p.nombre} - $${p.precio}</span>
+<button onclick="eliminarProducto(${i})">Eliminar</button>
+`
+
+div.appendChild(d)
+
+})
+
+}
+
+function eliminarProducto(i){
+
+productos.splice(i,1)
+localStorage.setItem("productos",JSON.stringify(productos))
+cargarProductos()
+
+}
+
+function guardarConfig(){
+
+config={
+nombre:document.getElementById("cfg_nombre").value,
+giro:document.getElementById("cfg_giro").value,
+direccion:document.getElementById("cfg_direccion").value,
+tel:document.getElementById("cfg_tel").value,
+email:document.getElementById("cfg_email").value,
+msg:document.getElementById("cfg_msg").value
+}
+
+localStorage.setItem("config",JSON.stringify(config))
+
+document.getElementById("businessName").innerText=config.nombre||"TODO REPUESTOS"
+
+alert("Configuración guardada")
+
+}
+
+document.getElementById("logoInput").addEventListener("change",function(){
+
+let file=this.files[0]
+if(!file)return
+
+let reader=new FileReader()
+
+reader.onload=function(e){
+localStorage.setItem("logo",e.target.result)
+document.getElementById("logoPreview").src=e.target.result
+}
+
+reader.readAsDataURL(file)
+
+})
+
+function init(){
+
+document.getElementById("fecha").value=new Date().toISOString().substring(0,10)
+document.getElementById("recibo").value=1
+
+let savedLogo=localStorage.getItem("logo")
+if(savedLogo)document.getElementById("logoPreview").src=savedLogo
+
+if(productos.length==0){
+
+productos=[
+{nombre:"Tuberia freno",precio:12},
+{nombre:"Bomba freno trs",precio:83},
+{nombre:"Reten rda tras",precio:18},
+{nombre:"Solucion litro",precio:14}
+]
+
+localStorage.setItem("productos",JSON.stringify(productos))
+
+}
+
+cargarProductos()
+
+}
+
+init()
+
+
+function calcularCambio(){
+  let totalEl = document.getElementById("total");
+  let total = 0;
+
+  if(totalEl){
+    let txt = totalEl.innerText.replace(/[^0-9.-]+/g,"");
+    total = parseFloat(txt) || 0;
+  }
+
+  let pago = parseFloat(document.getElementById("pago")?.value) || 0;
+  let cambio = pago - total;
+
+  let cambioEl = document.getElementById("cambio");
+
+  if(!cambioEl) return;
+
+  if(pago < total){
+    cambioEl.value = "Falta: $" + (total - pago).toFixed(2);
+  }else{
+    cambioEl.value = "$" + cambio.toFixed(2);
+  }
+}
+</script>
+
+
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+  let f=document.getElementById("fecha");
+  if(f) f.valueAsDate=new Date();
+  let r=document.getElementById("recibo");
+  if(r) r.value=Date.now();
+});
+
+function calcularCambio(){
+  let totalEl = document.getElementById("total");
+  let total = 0;
+
+  if(totalEl){
+    let txt = totalEl.innerText.replace(/[^0-9.-]+/g,"");
+    total = parseFloat(txt) || 0;
+  }
+
+  let pago = parseFloat(document.getElementById("pago")?.value) || 0;
+  let cambio = pago - total;
+
+  let cambioEl = document.getElementById("cambio");
+
+  if(!cambioEl) return;
+
+  if(pago < total){
+    cambioEl.value = "Falta: $" + (total - pago).toFixed(2);
+  }else{
+    cambioEl.value = "$" + cambio.toFixed(2);
+  }
+}
+</script>
+
+<script>
+function obtenerClientes(){
+  return JSON.parse(localStorage.getItem("clientes") || "[]");
+}
+
+function guardarClientes(arr){
+  localStorage.setItem("clientes", JSON.stringify(arr));
+}
+
+function cargarClientes(){
+  let lista = document.getElementById("listaClientes");
+  if(!lista) return;
+
+  lista.innerHTML = "";
+  let clientes = obtenerClientes();
+
+  clientes.forEach(c=>{
+    let opt = document.createElement("option");
+    opt.value = c;
+    lista.appendChild(opt);
+  });
+}
+
+function guardarCliente(){
+  let input = document.getElementById("cliente");
+  if(!input) return;
+
+  let nombre = input.value.trim();
+  if(nombre === ""){
+    alert("Escribe un nombre");
+    return;
+  }
+
+  let clientes = obtenerClientes();
+
+  if(!clientes.includes(nombre)){
+    clientes.push(nombre);
+    guardarClientes(clientes);
+    alert("Cliente guardado correctamente");
+  }else{
+    alert("Cliente ya existe");
+  }
+
+  cargarClientes();
+}
+
+document.addEventListener("DOMContentLoaded", function(){
+  cargarClientes();
+});
+</script>
+
+
+<script>
+function reimprimir(i){
+
+let v = ventas[i]
+
+if(!v || !v.ticket){
+  alert("Esta venta no tiene ticket guardado");
+  return;
+}
+
+let w = window.open("", "", "width=300,height=600")
+
+w.document.write("<pre>"+v.ticket+"</pre>")
+w.document.close()
+w.print()
+
+}
+</script>
+<script>
+/* ===== SERVICE QR + SUPABASE ===== */
+function sqEsc(v){return String(v ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function serviceStatusLabel(s){if(s==="DANGER")return '<span class="service-status status-danger">REQUIERE ATENCIÓN</span>';if(s==="WARN")return '<span class="service-status status-warn">REVISIÓN RECOMENDADA</span>';return '<span class="service-status status-ok">OK</span>';}
+function serviceBaseUrl(){return location.href.split("?")[0].split("#")[0].replace(/\/$/,"");}
+function nuevoCodigoQR(){return "FMS-"+Date.now().toString(36).toUpperCase()+"-"+Math.random().toString(36).substring(2,8).toUpperCase();}
+async function obtenerVehiculosSupabase(){if(!window.supabaseClient)return [];const {data,error}=await window.supabaseClient.from("Vehiculos").select("*").order("id",{ascending:false});if(error){console.error(error);alert("No se pudieron cargar los vehículos.\n\n"+error.message);return [];}return data||[];}
+async function renderServiceQR(){const div=document.getElementById("listaServiceQR");if(!div)return;if(!window.supabaseClient){div.innerHTML='<p class="small-note">Esperando conexión con Supabase...</p>';return;}div.innerHTML='<p class="small-note">Cargando vehículos...</p>';const vehiculos=await obtenerVehiculosSupabase();if(!vehiculos.length){div.innerHTML='<p class="small-note">Todavía no hay vehículos registrados.</p>';return;}div.innerHTML="";vehiculos.forEach(v=>{const d=document.createElement("div");d.className="card vehicle-card";d.innerHTML=`<b>${sqEsc(v.marca)} ${sqEsc(v.modelo)} ${sqEsc(v.anio||"")}</b><div>${sqEsc(v.placa||"Sin placa")} · ${sqEsc(v.kilometraje??0)} km</div><div style="margin-top:6px">${serviceStatusLabel(v.estado)}</div><div class="small-note" style="margin-top:5px">QR: ${sqEsc(v.codigo_qr||"-")}</div><button class="print" onclick="mostrarServiceQR(${Number(v.id)})">Ver ficha / QR</button>`;div.appendChild(d);});}
+async function guardarServiceQR(){if(!window.supabaseClient){alert("Supabase todavía no está conectado.");return;}const cliente=document.getElementById("sq_cliente").value.trim(),marca=document.getElementById("sq_marca").value.trim(),modelo=document.getElementById("sq_modelo").value.trim(),anio=document.getElementById("sq_anio").value,motor=document.getElementById("sq_motor").value.trim(),vin=document.getElementById("sq_vin").value.trim(),placa=document.getElementById("sq_placa").value.trim(),kilometraje=document.getElementById("sq_km").value,proximo_km=document.getElementById("sq_nextkm").value,proxima_fecha=document.getElementById("sq_nextdate").value||null,estado=document.getElementById("sq_estado").value,observaciones=document.getElementById("sq_obs").value.trim(),tipoServicio=document.getElementById("sq_servicio").value.trim();const codigoQR=nuevoCodigoQR();if(!marca||!modelo){alert("Ingresa al menos la marca y el modelo.");return;}const {data:vehiculo,error:errorVehiculo}=await window.supabaseClient.from("Vehiculos").insert([{cliente,marca,modelo,anio:anio?Number(anio):null,motor,vin,placa,kilometraje:kilometraje?Number(kilometraje):null,proximo_km:proximo_km?Number(proximo_km):null,proxima_fecha,estado,observaciones,codigo_qr:codigoQR}]).select().single();if(errorVehiculo){console.error(errorVehiculo);alert("No se pudo guardar el vehículo en Supabase.\n\n"+errorVehiculo.message);return;}const {error:errorMantenimiento}=await window.supabaseClient.from("Mantenimientos").insert([{vehiculo_id:vehiculo.id,tipo:tipoServicio||"Servicio",descripcion:tipoServicio||"Servicio realizado",kilometraje:kilometraje?Number(kilometraje):null,proximo_km:proximo_km?Number(proximo_km):null,proxima_fecha,estado,observaciones,codigo_qr:codigoQR}]);if(errorMantenimiento){console.error(errorMantenimiento);await window.supabaseClient.from("Vehiculos").delete().eq("id",vehiculo.id);alert("El vehículo se creó, pero el mantenimiento no pudo guardarse.\n\n"+errorMantenimiento.message);return;}["sq_cliente","sq_marca","sq_modelo","sq_anio","sq_motor","sq_vin","sq_placa","sq_km","sq_nextkm","sq_nextdate","sq_obs","sq_servicio"].forEach(id=>{const e=document.getElementById(id);if(e)e.value="";});await renderServiceQR();await mostrarServiceQR(vehiculo.id);alert("¡Vehículo y mantenimiento guardados correctamente en Supabase!");}
+async function mostrarServiceQR(id){if(!window.supabaseClient)return;const {data:v,error}=await window.supabaseClient.from("Vehiculos").select("*").eq("id",id).single();if(error||!v){console.error(error);alert("No se pudo cargar el vehículo.");return;}const {data:mantenimientos,error:errorMant}=await window.supabaseClient.from("Mantenimientos").select("*").eq("vehiculo_id",v.id).order("id",{ascending:false});if(errorMant)console.error(errorMant);const url=serviceBaseUrl()+"?service="+encodeURIComponent(v.codigo_qr);const div=document.getElementById("serviceQRPreview");div.innerHTML=`<div class="service-grid"><div><h3>${sqEsc(v.marca)} ${sqEsc(v.modelo)} ${sqEsc(v.anio||"")}</h3><p><b>Cliente:</b> ${sqEsc(v.cliente||"-")}</p><p><b>VIN:</b> ${sqEsc(v.vin||"-")}</p><p><b>Placa:</b> ${sqEsc(v.placa||"-")}</p><p><b>Motor:</b> ${sqEsc(v.motor||"-")}</p><p><b>Kilometraje:</b> ${sqEsc(v.kilometraje??0)} km</p><p>${serviceStatusLabel(v.estado)}</p></div><div class="qr-box"><b>ESCANEA PARA VER EL SERVICE</b><div id="qrCode"></div><div class="small-note">Código: ${sqEsc(v.codigo_qr||"-")}</div><button class="add" onclick="window.open('${url.replace(/'/g,"%27")}','_blank')">Abrir ficha pública</button><button class="print" onclick="imprimirQR()">Imprimir QR</button></div></div><hr><p><b>Próximo servicio:</b> ${sqEsc(v.proximo_km??"-")} km ${v.proxima_fecha?" / "+sqEsc(v.proxima_fecha):""}</p><p><b>Observaciones:</b> ${sqEsc(v.observaciones||"-")}</p><h4>Historial de mantenimiento</h4>${(mantenimientos||[]).map(m=>`<div class="maintenance-item"><b>${sqEsc(m.created_at?String(m.created_at).substring(0,10):"-")}</b> · ${sqEsc(m.kilometraje??"-")} km<br>${sqEsc(m.descripcion||m.tipo||"Servicio")}</div>`).join("")}`;if(window.QRCode)new QRCode(document.getElementById("qrCode"),{text:url,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});}
+function imprimirQR(){const box=document.getElementById("serviceQRPreview"),w=window.open("","_blank","width=420,height=700");if(!w)return;w.document.write(`<html><head><title>Service QR</title><style>body{font-family:Arial;padding:20px;text-align:center}img{max-width:220px}</style></head><body>${box.innerHTML}</body></html>`);w.document.close();setTimeout(()=>w.print(),500);}
+async function abrirFichaPublicaDesdeQR(){const codigo=new URLSearchParams(location.search).get("service");if(!codigo)return false;if(!window.supabaseClient){document.body.innerHTML='<div class="public-service"><h2>Conectando con el servicio...</h2></div>';return true;}const {data:v,error}=await window.supabaseClient.from("Vehiculos").select("*").eq("codigo_qr",codigo).single();if(error||!v){document.body.innerHTML='<div class="public-service"><h2>No se encontró el vehículo</h2><p>El código QR no corresponde a un registro válido.</p></div>';console.error(error);return true;}const {data:mantenimientos}=await window.supabaseClient.from("Mantenimientos").select("*").eq("vehiculo_id",v.id).order("id",{ascending:false});const nombre=(config&&config.nombre)?config.nombre:"FULL MOTOR SERVICE";document.body.innerHTML=`<div class="public-service"><div class="public-head"><div style="font-size:28px;font-weight:bold;color:#e53935">${sqEsc(nombre)}</div><div>Historial de mantenimiento vehicular</div></div><h2>${sqEsc(v.marca)} ${sqEsc(v.modelo)} ${sqEsc(v.anio||"")}</h2><p><b>Placa:</b> ${sqEsc(v.placa||"-")}</p><p><b>VIN:</b> ${sqEsc(v.vin||"-")}</p><p><b>Motor:</b> ${sqEsc(v.motor||"-")}</p><p><b>Kilometraje:</b> ${sqEsc(v.kilometraje??0)} km</p><p>${serviceStatusLabel(v.estado)}</p><hr><h3>Próximo mantenimiento</h3><p><b>${sqEsc(v.proximo_km??"-")} km</b>${v.proxima_fecha?" · "+sqEsc(v.proxima_fecha):""}</p><h3>Historial</h3>${(mantenimientos||[]).map(m=>`<div class="maintenance-item"><b>${sqEsc(m.created_at?String(m.created_at).substring(0,10):"-")}</b> · ${sqEsc(m.kilometraje??"-")} km<br>${sqEsc(m.descripcion||m.tipo||"Servicio")}</div>`).join("")}<h3>Observaciones</h3><p>${sqEsc(v.observaciones||"Sin observaciones")}</p><div class="small-note" style="margin-top:25px">Ficha digital Service QR · ${sqEsc(v.codigo_qr||"")}</div></div>`;return true;}
+const oldTab=tab;tab=function(id){oldTab(id);if(id==="serviceQR")renderServiceQR();};document.addEventListener("DOMContentLoaded",async()=>{const publico=await abrirFichaPublicaDesdeQR();if(!publico)renderServiceQR();});window.addEventListener("supabase-ready",()=>{if(!new URLSearchParams(location.search).get("service"))renderServiceQR();});
+</script>
+<script type="module">
+  import { supabase } from './src/supabase.js';
+  window.supabaseClient = supabase;
+  window.dispatchEvent(new Event("supabase-ready"));
+</script>
+
+</body>
+</html>
